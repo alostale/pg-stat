@@ -1,3 +1,5 @@
+-- Tables 
+
 create table temp_stat_user_tables
 (relid                oid                      ,
  schemaname           name                     ,
@@ -106,39 +108,80 @@ create table snapshot
 	ts  timestamp without time zone default now() not null
 	customer text,
 	description text
+);
+
+
+-- Views
+
+drop view if exists compare_statements;
+create view compare_statements as
+with s1_and_s2 as (
+  select
+    s2.calls               - s1.calls               as calls              ,
+    s2.total_time          - s1.total_time          as total_time         ,
+    LEAST(s2.min_time , s1.min_time)            as min_time           ,    -- not nesarily from the period
+    greatest(s2.max_time            , s1.max_time)            as max_time   , -- not nesarily from the period
+    (s2.total_time - s1.total_time) /(s2.calls-s1.calls)       as mean_time          ,
+    s2.stddev_time         /*- s1.stddev_time*/         as stddev_time        ,
+    s2.rows                - s1.rows                as rows               ,
+    s2.shared_blks_hit     - s1.shared_blks_hit     as shared_blks_hit    ,
+    s2.shared_blks_read    - s1.shared_blks_read    as shared_blks_read   ,
+    s2.shared_blks_dirtied - s1.shared_blks_dirtied as shared_blks_dirtied,
+    s2.shared_blks_written - s1.shared_blks_written as shared_blks_written,
+    s2.local_blks_hit      - s1.local_blks_hit      as local_blks_hit     ,
+    s2.local_blks_read     - s1.local_blks_read     as local_blks_read    ,
+    s2.local_blks_dirtied  - s1.local_blks_dirtied  as local_blks_dirtied ,
+    s2.local_blks_written  - s1.local_blks_written  as local_blks_written ,
+    s2.temp_blks_read      - s1.temp_blks_read      as temp_blks_read     ,
+    s2.temp_blks_written   - s1.temp_blks_written   as temp_blks_written  ,
+    s2.blk_read_time       - s1.blk_read_time       as blk_read_time      ,
+    s2.blk_write_time      - s1.blk_write_time      as blk_write_time     ,
+    s1.snapshot_id as snapshot1       ,
+    s2.snapshot_id as snapshot2 ,
+    s2.queryid,
+    'both'::text as present,
+    s1.query as query
+  from stat_statements s1, 
+       stat_statements s2
+  where s1.queryid = s2.queryid
+    and s2.calls - s1.calls > 0
+),
+only_s2 as (
+  select
+    s2.calls               ,
+    s2.total_time          ,
+    s2.min_time            ,
+    s2.max_time            ,
+    s2.total_time          ,
+    s2.stddev_time         ,
+    s2.rows                ,
+    s2.shared_blks_hit     ,
+    s2.shared_blks_read    ,
+    s2.shared_blks_dirtied ,
+    s2.shared_blks_written ,
+    s2.local_blks_hit      ,
+    s2.local_blks_read     ,
+    s2.local_blks_dirtied  ,
+    s2.local_blks_written  ,
+    s2.temp_blks_read      ,
+    s2.temp_blks_written   ,
+    s2.blk_read_time       ,
+    s2.blk_write_time      ,
+    s1.snapshot1  as snapshot1       ,
+    s2.snapshot_id as snapshot2 ,
+    s2.queryid,
+    'snapshot_2'::text as present,
+    s2.query as query
+   from stat_statements s2, 
+        (select snapshot1 from s1_and_s2 limit 1) as s1
+   where not exists (select 1 from stat_statements ss1 where ss1.snapshot_id = s1.snapshot1 and ss1.queryid = s2.queryid)
 )
+select * from s1_and_s2
+union 
+select * from only_s2;
 
-create or replace view compare_statements as (
-select 
-s2.calls               - s1.calls               as calls              ,
-s2.total_time          - s1.total_time          as total_time         ,
-LEAST(s2.min_time , s1.min_time)            as min_time           ,    -- not nesarily from the period
-greatest(s2.max_time            , s1.max_time)            as max_time   , -- not nesarily from the period
-(s2.total_time - s1.total_time) /(s2.calls-s1.calls)       as mean_time          ,
-s2.stddev_time         /*- s1.stddev_time*/         as stddev_time        ,
-s2.rows                - s1.rows                as rows               ,
-s2.shared_blks_hit     - s1.shared_blks_hit     as shared_blks_hit    ,
-s2.shared_blks_read    - s1.shared_blks_read    as shared_blks_read   ,
-s2.shared_blks_dirtied - s1.shared_blks_dirtied as shared_blks_dirtied,
-s2.shared_blks_written - s1.shared_blks_written as shared_blks_written,
-s2.local_blks_hit      - s1.local_blks_hit      as local_blks_hit     ,
-s2.local_blks_read     - s1.local_blks_read     as local_blks_read    ,
-s2.local_blks_dirtied  - s1.local_blks_dirtied  as local_blks_dirtied ,
-s2.local_blks_written  - s1.local_blks_written  as local_blks_written ,
-s2.temp_blks_read      - s1.temp_blks_read      as temp_blks_read     ,
-s2.temp_blks_written   - s1.temp_blks_written   as temp_blks_written  ,
-s2.blk_read_time       - s1.blk_read_time       as blk_read_time      ,
-s2.blk_write_time      - s1.blk_write_time      as blk_write_time     ,
-s1.snapshot_id as snapshot1       ,
-s2.snapshot_id as snapshot2 ,
-s1.query as query
-from stat_statements s1, 
-     stat_statements s2
-where s1.queryid = s2.queryid
-and s2.calls - s1.calls > 0);
--- missing statements only in s2!!
-
-create or replace view compare_tables as (
+drop view if exists compare_tables;
+create view compare_tables as (
 select         
 s2.relname                ,
 s2.seq_scan            - s1.seq_scan            as seq_scan            ,
@@ -164,6 +207,4 @@ s1.snapshot_id as snapshot1 ,
 s2.snapshot_id as snapshot2 
 from stat_user_tables s1, stat_user_tables s2
 where s1.relid = s2.relid);
-
-
 
