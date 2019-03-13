@@ -102,12 +102,20 @@ blk_read_time	    double precision,
 blk_write_time	    double precision,
 snapshot_id         int);
 
+create table customer
+(
+  customer_id int primary key,
+  code character varying (10) not null,
+  name text not null,
+  comments text
+);
+
 create table snapshot 
 (
-	snapshot_id int primary key,
-	ts  timestamp without time zone default now() not null
-	customer text,
-	description text
+  snapshot_id int primary key,
+  ts  timestamp without time zone default now() not null,
+  customer_id int,
+  description text
 );
 
 
