@@ -118,6 +118,9 @@ create table snapshot
   description text
 );
 
+alter table snapshot add constraint snapshot_customer foreign key (customer_id) references customer (customer_id);
+alter table stat_statements add constraint statement_snapshot foreign key (snapshot_id) references snapshot (snapshot_id);
+alter table stat_user_tables add constraint statement_snapshot foreign key (snapshot_id) references snapshot (snapshot_id);
 
 -- Views
 
