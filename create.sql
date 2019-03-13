@@ -219,3 +219,36 @@ s2.snapshot_id as snapshot2
 from stat_user_tables s1, stat_user_tables s2
 where s1.relid = s2.relid);
 
+CREATE or replace FUNCTION statements(int, int) RETURNS SETOF compare_statements AS
+$$
+BEGIN
+    RETURN QUERY SELECT *
+                   FROM compare_statements 
+                  WHERE snapshot1 = $1
+                  and snapshot2 = $2;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'No data found for statements % and %.', $1,$2;
+    END IF;
+
+    RETURN;
+ END
+$$
+LANGUAGE plpgsql;
+
+CREATE or replace FUNCTION user_tables(int, int) RETURNS SETOF compare_tables AS
+$$
+BEGIN
+    RETURN QUERY SELECT *
+                   FROM compare_tables 
+                  WHERE snapshot1 = $1
+                  and snapshot2 = $2;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'No data found for user_tables % and %.', $1,$2;
+    END IF;
+
+    RETURN;
+ END
+$$
+LANGUAGE plpgsql;
