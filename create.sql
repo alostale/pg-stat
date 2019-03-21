@@ -107,6 +107,7 @@ create table customer
   customer_id int primary key,
   code character varying (10) not null,
   name text not null,
+  pg_version character varying,
   comments text
 );
 
