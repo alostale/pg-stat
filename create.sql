@@ -254,6 +254,10 @@ BEGIN
 $$
 LANGUAGE plpgsql;
 
+create function h_bigint(text) returns bigint as $$
+ select ('x'||substr(md5($1),1,16))::bit(64)::bigint;
+$$ language sql immutable;
+
 CREATE or replace FUNCTION import_snapshot(cust_code character varying, file character varying) returns integer AS
 $pl$
 declare
@@ -337,6 +341,9 @@ begin
      end if;
      
      insert into stat_statements select *, current_snapshot_id from temp_stat_statements;
+     update stat_statements
+       set queryid = h_bigint(query)
+       where snapshot_id = current_snapshot_id;
   else 
     select count(*)
       into cnt
