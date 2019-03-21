@@ -125,8 +125,8 @@ alter table stat_user_tables add constraint statement_snapshot foreign key (snap
 
 -- Views
 
-drop view if exists compare_statements;
-create view compare_statements as
+drop view if exists compare_statements cascade;
+create or replace view compare_statements as
 with s1_and_s2 as (
   select
     s2.calls               - s1.calls               as calls              ,
@@ -366,3 +366,6 @@ begin
   end if;
   return cnt;
 end $pl$ LANGUAGE plpgsql;
+
+
+create index statemt_snapshot on stat_statements (snapshot_id);
