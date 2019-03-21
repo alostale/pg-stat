@@ -253,3 +253,116 @@ BEGIN
  END
 $$
 LANGUAGE plpgsql;
+
+CREATE or replace FUNCTION import_snapshot(cust_code character varying, file character varying) returns integer AS
+$pl$
+declare
+  cust customer%rowtype;
+  existent_snapshot snapshot%rowtype;
+  type character varying;
+  file_match text[];
+  time_stamp timestamp without time zone;
+  current_snapshot_id int;
+  cnt int;
+begin
+  select *
+    into cust
+    from customer
+   where code = cust_code;
+
+  if cust is null then
+    raise exception 'Customer % not found. Use customer code', cust_code;
+  end if;
+
+  if file not like '/%' then
+    raise exception 'Use absolute paths. Invalid file: %', file;
+  end if;
+
+  file_match := regexp_matches(file, '.*/(.*)_(.*)_(.*).copy');
+  if file_match is null then
+    raise exception 'Incorrect file name %', file;
+  end if;
+
+  type := file_match[1];
+  if type not in ('pg_stat_statements', 'pg_stat_user_tables') then
+    raise exception 'Unsupported snapshot type %', type;
+  end if;
+
+  time_stamp := file_match[2]||' '||file_match[3];
+  raise notice 'Customer: %', cust.name;
+  raise notice 'File type: %', type;
+  raise notice 'Time stamp: %', time_stamp;
+
+  select *
+    into existent_snapshot
+    from snapshot 
+   where customer_id = cust.customer_id
+     and ts between (time_stamp - interval '10 minute') and (time_stamp + interval '10 minute');
+
+  if existent_snapshot is null then
+    select coalesce(max(snapshot_id), 0)+1 
+      into current_snapshot_id
+      from snapshot;
+    insert into snapshot (snapshot_id, customer_id, ts) 
+        values (current_snapshot_id, cust.customer_id, time_stamp);
+    raise notice 'Creating new snapshot [%] with for % ts %', current_snapshot_id, cust.name, time_stamp;
+  else
+    raise notice 'Using existent snapshot [%] with ts %', existent_snapshot.snapshot_id, existent_snapshot.ts;
+    current_snapshot_id = existent_snapshot.snapshot_id;
+  end if;
+
+  if type = 'pg_stat_statements' then
+    select count(*)
+      into cnt
+      from stat_statements
+     where snapshot_id = current_snapshot_id;
+     if cnt > 0 then
+       raise exception 'stat_statements in snapshot [%] has % records. Not importing any!', current_snapshot_id, cnt;
+     end if;
+
+     truncate table temp_stat_statements;
+
+     if cust.pg_version = '9.3' then
+       EXECUTE format($$copy temp_stat_statements (userid, dbid, query, calls, total_time, rows, shared_blks_hit, shared_blks_read, shared_blks_dirtied, shared_blks_written, local_blks_hit, local_blks_read, local_blks_dirtied, local_blks_written, temp_blks_read, temp_blks_written, blk_read_time, blk_write_time) from '%s'$$, file);
+     else
+       EXECUTE format($$COPY temp_stat_statements from '%s'$$, file);
+     end if;
+     
+     select count(*)
+       into cnt
+      from temp_stat_statements;
+
+     if cnt = 0 then
+      raise exception '%', 'No records imported';
+     end if;
+     
+     insert into stat_statements select *, current_snapshot_id from temp_stat_statements;
+  else 
+    select count(*)
+      into cnt
+      from stat_user_tables
+     where snapshot_id = current_snapshot_id;
+     if cnt > 0 then
+       raise exception 'stat_user_tables in napshot [%] has % records. Not importing any!', current_snapshot_id, cnt;
+     end if;
+     
+     truncate table temp_stat_user_tables;
+
+     if cust.pg_version = '9.3' then
+       EXECUTE format($$copy temp_stat_user_tables (relid, schemaname, relname, seq_scan, seq_tup_read, idx_scan, idx_tup_fetch, n_tup_ins, n_tup_upd, n_tup_del, n_tup_hot_upd, n_live_tup, n_dead_tup, last_vacuum, last_autovacuum, last_analyze, last_autoanalyze, vacuum_count, autovacuum_count, analyze_count, autoanalyze_count) from '%s'$$, file);
+     else
+       EXECUTE format($$COPY temp_stat_user_tables from '%s'$$, file);
+     end if;
+
+     select count(*)
+      into cnt
+     from temp_stat_user_tables;
+
+     if cnt = 0 then
+       raise exception '%', 'No records imported';
+     end if;
+
+     insert into stat_user_tables select *, current_snapshot_id from temp_stat_user_tables;
+  end if;
+  return cnt;
+end $pl$ LANGUAGE plpgsql;
