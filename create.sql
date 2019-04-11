@@ -341,9 +341,12 @@ begin
      end if;
      
      insert into stat_statements select *, current_snapshot_id from temp_stat_statements;
-     update stat_statements
-       set queryid = h_bigint(query)
-       where snapshot_id = current_snapshot_id;
+
+     if cust.pg_version = '9.3' then
+       update stat_statements
+          set queryid = h_bigint(query)
+        where snapshot_id = current_snapshot_id;
+     end if;
   else 
     select count(*)
       into cnt
